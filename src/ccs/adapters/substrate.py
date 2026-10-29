@@ -1056,7 +1056,9 @@ class CoordinatedSubstrate:
         a converged write a byte-identical peer's bump may have advanced it,
         and the refused request is then the pre-read that checks for it. Nor
         does a converged write claim it "landed": attribution is disclaimed
-        (see :class:`ReconcileVerdict`)."""
+        (see :class:`ReconcileVerdict`). An unconfirmed coordinator outcome
+        carries the same substrate context without claiming whether the bump
+        ran; the original unknown is kept as its cause."""
         landed = _landed_clause(pending.artifact_ref, converged=converged)
         try:
             return self._bump(pending, converged=converged)
@@ -1074,6 +1076,10 @@ class CoordinatedSubstrate:
                 "coordinator recorded no bump from this write. Not re-driven; re-read "
                 "before retrying."
             ) from failure
+        except CommitUnconfirmed as unconfirmed:
+            raise CommitUnconfirmed(
+                f"{landed}, but the coordinator bump is unconfirmed: {unconfirmed}"
+            ) from unconfirmed
 
     def _bump(self, pending: _PendingCommit, *, converged: bool) -> CommitResult:
         try:

@@ -259,9 +259,10 @@ def test_a_cas_whose_compare_and_swap_gets_no_answer_is_unconfirmed_and_touches_
     assert recorded_version(server, REL) == version, _BYPASSED
 
 
+@pytest.mark.parametrize("converged", [False, True], ids=["landed", "converged"])
 def test_a_substrate_commit_whose_bump_gets_no_answer_is_unconfirmed_and_not_re_driven(
     tmp_path: Path, fast_cfg: LifecycleConfig, server: CoordinatorHTTPServer,
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, converged: bool,
 ) -> None:
     """A substrate ``commit()``'s pre-read is answered and its substrate write
     lands, since the substrate goes first; the coordinator bump then reaches a
@@ -271,12 +272,22 @@ def test_a_substrate_commit_whose_bump_gets_no_answer_is_unconfirmed_and_not_re_
     sub, session, binding, store = _substrate(tmp_path, fast_cfg)
     _bytes, token = sub.read(REL)
     version = recorded_version(server, REL)
+    if converged:
+        binding.script_unknown(landed=True)
     with ForwardingListener(session._endpoint.port, relay=1) as listener:
         _point_at(session, listener.port, monkeypatch)
         exc, elapsed = _raised_in(lambda: sub.commit(REL, expected_token=token, new_bytes=b"s2"))
 
     assert type(exc) is CommitUnconfirmed, repr(exc)
-    _assert_ended_by_the_read_timeout(exc, elapsed, waited=TIMEOUT_SEC)
+    cause = exc.__cause__
+    assert type(cause) is CommitUnconfirmed, repr(cause)
+    landed = (
+        f"the substrate holds the bytes this write intended for {REL!r} "
+        "(converged: which write put them there is not claimed)"
+        if converged else f"the substrate write to {REL!r} landed"
+    )
+    assert str(exc) == f"{landed}, but the coordinator bump is unconfirmed: {cause}"
+    _assert_ended_by_the_read_timeout(cause, elapsed, waited=TIMEOUT_SEC)
     assert listener.accepted == 2, "a request was retried"
     assert _routes(listener.relayed) == ["/hooks/pre-read"]
     assert _routes(listener.silenced) == ["/hooks/post-edit-cas"]

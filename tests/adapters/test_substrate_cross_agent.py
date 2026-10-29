@@ -1132,6 +1132,12 @@ def test_a_failed_completeness_check_of_a_converged_write_is_the_bump_legs_unkno
             )
             observer = _session(tmp_path, fast_cfg)
             assert observer.pre_read(REF, None).version == 2, "the peer's identical bump advanced it"
+        else:
+            cause = raised.value.__cause__
+            assert type(cause) is CommitUnconfirmed, "the failed completeness check remains the cause"
+            assert str(raised.value) == (
+                f"{_CONVERGED.format(ref=REF)}, but the coordinator bump is unconfirmed: {cause}"
+            )
         rendered = "".join(traceback.format_exception(raised.value))
         assert all(isinstance(m, str) and m for m in material), "control: real values to look for"
         assert not [m for m in material if m in rendered], "a nonce or principal reached the error"
